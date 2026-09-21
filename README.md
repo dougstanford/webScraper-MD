@@ -1,4 +1,4 @@
-# webScraperMD
+# webScraper-MD
 
 Clip a web page — or crawl a whole knowledge base — into Obsidian-optimized
 Markdown that matches what the [Obsidian Web Clipper](https://obsidian.md/clipper)
@@ -9,7 +9,7 @@ find the article, **Turndown** + the **GFM plugin** to convert it, and the
 clipper's default frontmatter template on top.
 
 ```bash
-node clip.mjs https://example.com/docs/api/introduction
+node scrape.mjs https://example.com/docs/api/introduction
 ```
 
 ```
@@ -43,13 +43,13 @@ npm install playwright && npx playwright install chromium
 ## Usage
 
 ```bash
-node clip.mjs <url> [options]
+node scrape.mjs <url> [options]
 ```
 
 ### Clip one page
 
 ```bash
-node clip.mjs https://example.com/docs/api/filtering \
+node scrape.mjs https://example.com/docs/api/filtering \
   --out "~/Obsidian/Vault/Web Clippings"
 ```
 
@@ -59,7 +59,7 @@ Sites that build their content in the browser — Obsidian Publish, most SPA doc
 — need `--render`:
 
 ```bash
-node clip.mjs https://obsidian.md/help/callouts --render --strip-site-suffix \
+node scrape.mjs https://obsidian.md/help/callouts --render --strip-site-suffix \
   --out "~/Obsidian/Vault/Web Clippings/Obsidian"
 ```
 
@@ -73,7 +73,7 @@ navigation, which is where a docs site keeps its index — and stays inside
 `--scope` (by default, the start URL's own directory).
 
 ```bash
-node clip.mjs https://example.com/docs/api/introduction \
+node scrape.mjs https://example.com/docs/api/introduction \
   --crawl \
   --out "~/Obsidian/Vault/Web Clippings/Example API" \
   --index --wikilinks
@@ -86,7 +86,7 @@ connected folder in the vault.
 Always start with `--dry-run` on an unfamiliar site to see what the scope catches:
 
 ```bash
-node clip.mjs https://example.com/docs/start --crawl --dry-run
+node scrape.mjs https://example.com/docs/start --crawl --dry-run
 ```
 
 ## Options
@@ -195,7 +195,7 @@ a 400ms pause, and `--limit` caps the run. Raise `--delay` and lower
 ## Layout
 
 ```
-clip.mjs              CLI: argument parsing, output, assets, wikilinks, index
+scrape.mjs            CLI: argument parsing, output, assets, wikilinks, index
 src/fetch.mjs         HTTP, robots.txt, optional Playwright rendering
 src/dom.mjs           DOM normalisation before extraction
 src/extract.mjs       Readability + Turndown pipeline for one page

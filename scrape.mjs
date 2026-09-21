@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * webScraperMD — clip a page or a whole knowledge base into Obsidian-optimized
+ * webScraper-MD — clip a page or a whole knowledge base into Obsidian-optimized
  * Markdown, matching the output of the Obsidian Web Clipper browser extension.
  *
- *   node clip.mjs <url> [options]
+ *   node scrape.mjs <url> [options]
  *
  * Run with --help for the full option list.
  */
@@ -21,10 +21,10 @@ import {
 } from './src/crawl.mjs';
 
 const HELP = `
-webScraperMD — web pages and knowledge bases as Obsidian-optimized Markdown
+webScraper-MD — web pages and knowledge bases as Obsidian-optimized Markdown
 
 USAGE
-  node clip.mjs <url> [options]
+  node scrape.mjs <url> [options]
 
 OUTPUT
   -o, --out <dir>          Output directory (default: ./clippings)
@@ -61,14 +61,14 @@ FETCHING
 
 EXAMPLES
   # one page
-  node clip.mjs https://example.com/docs/api/introduction
+  node scrape.mjs https://example.com/docs/api/introduction
 
   # the whole v2 API knowledge base, into a vault folder, with an index
-  node clip.mjs https://example.com/docs/api/introduction \\
+  node scrape.mjs https://example.com/docs/api/introduction \\
     --crawl --out "~/Obsidian/Web Clippings/Example API" --index --wikilinks
 
   # a JavaScript-rendered site, seeded from its sitemap
-  node clip.mjs https://example.com/docs/ --crawl --render --sitemap --limit 50
+  node scrape.mjs https://example.com/docs/ --crawl --render --sitemap --limit 50
 `;
 
 function parseArgs(argv) {
@@ -153,7 +153,7 @@ function parseArgs(argv) {
 }
 
 function fail(message) {
-  console.error(`webScraperMD: ${message}`);
+  console.error(`webScraper-MD: ${message}`);
   process.exit(1);
 }
 
@@ -448,6 +448,6 @@ async function exists(file) {
 }
 
 main().catch((error) => {
-  console.error(`webScraperMD: ${error.stack || error.message}`);
+  console.error(`webScraper-MD: ${error.stack || error.message}`);
   process.exit(1);
 });

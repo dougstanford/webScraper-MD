@@ -1,13 +1,13 @@
 {
-  "name": "webScraperMD",
+  "name": "webScraper-MD",
   "version": "1.0.0",
   "description": "Clip web pages and whole knowledge bases into Obsidian-optimized Markdown, matching the Obsidian Web Clipper's output.",
   "type": "module",
   "bin": {
-    "webScraperMD": "./clip.mjs"
+    "webScraper-MD": "./scrape.mjs"
   },
   "scripts": {
-    "clip": "node clip.mjs"
+    "scrape": "node scrape.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
