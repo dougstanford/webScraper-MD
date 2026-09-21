@@ -1,4 +1,4 @@
-# kb-clip
+# webScraperMD
 
 Clip a web page — or crawl a whole knowledge base — into Obsidian-optimized
 Markdown that matches what the [Obsidian Web Clipper](https://obsidian.md/clipper)
@@ -9,21 +9,21 @@ find the article, **Turndown** + the **GFM plugin** to convert it, and the
 clipper's default frontmatter template on top.
 
 ```bash
-node clip.mjs https://developer.affinity.co/pages/external-api-v2/introduction
+node clip.mjs https://example.com/docs/api/introduction
 ```
 
 ```
 ---
-title: "Introduction - Affinity Developer Documentation"
-source: "https://developer.affinity.co/pages/external-api-v2/introduction"
+title: "Introduction - Example Developer Documentation"
+source: "https://example.com/docs/api/introduction"
 author:
 published:
 created: 2026-09-21
-description: "Welcome to our new documentation site for API v2! ..."
+description: "Welcome to the documentation for API v2! ..."
 tags:
   - "clippings"
 ---
-Welcome to our new documentation site for API v2! This API provides a RESTful
+Welcome to the documentation for API v2! This API provides a RESTful
 interface for building internal apps, automated workflows, ...
 ```
 
@@ -49,7 +49,7 @@ node clip.mjs <url> [options]
 ### Clip one page
 
 ```bash
-node clip.mjs https://developer.affinity.co/pages/external-api-v2/filtering \
+node clip.mjs https://example.com/docs/api/filtering \
   --out "~/Obsidian/Vault/Web Clippings"
 ```
 
@@ -73,9 +73,9 @@ navigation, which is where a docs site keeps its index — and stays inside
 `--scope` (by default, the start URL's own directory).
 
 ```bash
-node clip.mjs https://developer.affinity.co/pages/external-api-v2/introduction \
+node clip.mjs https://example.com/docs/api/introduction \
   --crawl \
-  --out "~/Obsidian/Vault/Web Clippings/Affinity API" \
+  --out "~/Obsidian/Vault/Web Clippings/Example API" \
   --index --wikilinks
 ```
 

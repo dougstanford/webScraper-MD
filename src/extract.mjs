@@ -160,7 +160,7 @@ export function clipPage(html, url, options = {}) {
   const meta = extractMetadata(preMeta.doc, url, article, { now, stripTitleSuffix });
 
   // Run the extracted fragment through preprocessing once more: Readability
-  // rebuilds nodes, and our data-kbc-* markers must survive into Turndown.
+  // rebuilds nodes, and our data-wsmd-* markers must survive into Turndown.
   const fragment = parseDocument(`<body>${contentHtml}</body>`, url);
   preprocess(fragment.window.document, url);
   dropRedundantTitle(fragment.window.document, meta);

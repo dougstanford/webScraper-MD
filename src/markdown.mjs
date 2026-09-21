@@ -42,7 +42,7 @@ export function createTurndown(options = {}) {
     replacement: (_content, node) => {
       const code = node.querySelector ? node.querySelector('code') : null;
       const text = (code || node).textContent.replace(/\n+$/, '');
-      const language = node.getAttribute('data-kbc-lang') || '';
+      const language = node.getAttribute('data-wsmd-lang') || '';
       // Widen the fence if the code itself contains a run of backticks.
       const longest = (text.match(/`+/g) || []).reduce((max, run) => Math.max(max, run.length), 0);
       const fence = '`'.repeat(Math.max(3, longest + 1));
@@ -77,15 +77,15 @@ export function createTurndown(options = {}) {
 
   // --- Obsidian callouts ----------------------------------------------------
   td.addRule('obsidianCallout', {
-    filter: (node) => node.nodeType === 1 && node.hasAttribute?.('data-kbc-callout'),
+    filter: (node) => node.nodeType === 1 && node.hasAttribute?.('data-wsmd-callout'),
     replacement: (content, node) => {
-      const type = node.getAttribute('data-kbc-callout') || 'note';
-      let title = node.getAttribute('data-kbc-callout-title') || '';
+      const type = node.getAttribute('data-wsmd-callout') || 'note';
+      let title = node.getAttribute('data-wsmd-callout-title') || '';
       // A title that is the bare lowercase type ("[!note] note") is a machine
       // label from the page's own markup; a properly cased one ("Note") is what
       // the page actually showed, so it stays.
       if (title.trim() === type.toLowerCase()) title = '';
-      const fold = node.getAttribute('data-kbc-callout-fold') || '';
+      const fold = node.getAttribute('data-wsmd-callout-fold') || '';
       const body = content.replace(/^\n+|\n+$/g, '');
       const header = `> [!${type}]${fold}${title ? ` ${title}` : ''}`;
       const quoted = body
@@ -104,7 +104,7 @@ export function createTurndown(options = {}) {
 
   // The callout's own title bar: already rendered into the callout header.
   td.addRule('calloutHeading', {
-    filter: (node) => node.nodeType === 1 && node.hasAttribute?.('data-kbc-callout-heading'),
+    filter: (node) => node.nodeType === 1 && node.hasAttribute?.('data-wsmd-callout-heading'),
     replacement: () => '',
   });
 
@@ -120,10 +120,10 @@ export function createTurndown(options = {}) {
 
   // --- Maths ----------------------------------------------------------------
   td.addRule('math', {
-    filter: (node) => node.nodeType === 1 && node.hasAttribute?.('data-kbc-math'),
+    filter: (node) => node.nodeType === 1 && node.hasAttribute?.('data-wsmd-math'),
     replacement: (_content, node) => {
-      const tex = node.getAttribute('data-kbc-math');
-      return node.hasAttribute('data-kbc-math-display')
+      const tex = node.getAttribute('data-wsmd-math');
+      return node.hasAttribute('data-wsmd-math-display')
         ? `\n\n$$\n${tex}\n$$\n\n`
         : `$${tex}$`;
     },
@@ -146,7 +146,7 @@ export function createTurndown(options = {}) {
 
   // --- Figure captions ------------------------------------------------------
   td.addRule('figure', {
-    filter: (node) => node.nodeName === 'FIGURE' && node.hasAttribute?.('data-kbc-figure'),
+    filter: (node) => node.nodeName === 'FIGURE' && node.hasAttribute?.('data-wsmd-figure'),
     replacement: (content) => `\n\n${content.replace(/^\n+|\n+$/g, '')}\n\n`,
   });
 

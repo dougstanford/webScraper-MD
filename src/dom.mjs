@@ -38,11 +38,11 @@ const HEADING_ANCHOR_SELECTORS = [
 ];
 
 /** Containers whose hidden children are collapsed content, not chrome. */
-const COLLAPSIBLE_CONTENT_SELECTOR = '[data-callout], [data-kbc-callout], .callout, .admonition, .theme-admonition, details';
+const COLLAPSIBLE_CONTENT_SELECTOR = '[data-callout], [data-wsmd-callout], .callout, .admonition, .theme-admonition, details';
 
 /** Elements a code block must never be lifted out of. */
 const CODE_WRAPPER_STOP_SELECTOR = [
-  '[data-callout]', '[data-kbc-callout]', '.callout', '.admonition', '.theme-admonition',
+  '[data-callout]', '[data-wsmd-callout]', '.callout', '.admonition', '.theme-admonition',
   'blockquote', 'li', 'td', 'th', 'details', 'article', 'main', 'form',
 ].join(', ');
 
@@ -334,7 +334,7 @@ function tagCodeLanguages(doc) {
     if (language) {
       const normalised = LANGUAGE_ALIASES[String(language).toLowerCase()]
         ?? String(language).toLowerCase();
-      if (normalised) pre.setAttribute('data-kbc-lang', normalised);
+      if (normalised) pre.setAttribute('data-wsmd-lang', normalised);
     }
 
     // Syntax highlighters split code across spans; flatten to text so Turndown
@@ -413,7 +413,7 @@ function tagCallouts(doc) {
 
   for (const selector of CALLOUT_SELECTORS) {
     for (const el of doc.querySelectorAll(selector)) {
-      if (el.hasAttribute('data-kbc-callout')) continue;
+      if (el.hasAttribute('data-wsmd-callout')) continue;
 
       // An explicitly declared type is the author's own word for it — Obsidian
       // accepts aliases like [!faq], so keep it rather than normalising.
@@ -437,21 +437,21 @@ function tagCallouts(doc) {
       if (!type) continue;
 
       const lower = type.toLowerCase();
-      el.setAttribute('data-kbc-callout', declared ? lower : (CALLOUT_TYPE_WORDS[lower] || lower));
+      el.setAttribute('data-wsmd-callout', declared ? lower : (CALLOUT_TYPE_WORDS[lower] || lower));
       if (titleText) {
-        el.setAttribute('data-kbc-callout-title', titleText);
+        el.setAttribute('data-wsmd-callout-title', titleText);
         // Mark the title node rather than removing it: a callout that is
         // nothing but a title would otherwise be left empty, and Turndown
         // skips empty nodes before any rule of ours can run.
         if (titleEl && titleEl.textContent.trim() === titleText) {
-          titleEl.setAttribute('data-kbc-callout-heading', '');
+          titleEl.setAttribute('data-wsmd-callout-heading', '');
         }
       }
       const fold = (el.getAttribute('data-callout-fold') || '').trim();
       if (fold === '-' || fold === '+') {
-        el.setAttribute('data-kbc-callout-fold', fold);
+        el.setAttribute('data-wsmd-callout-fold', fold);
       } else if (el.classList.contains('is-collapsed')) {
-        el.setAttribute('data-kbc-callout-fold', '-');
+        el.setAttribute('data-wsmd-callout-fold', '-');
       }
     }
   }
@@ -467,11 +467,11 @@ function tagCallouts(doc) {
  * discard short callouts as boilerplate.
  */
 function calloutsToBlockquotes(doc) {
-  const callouts = [...doc.querySelectorAll('[data-kbc-callout]')].reverse();
+  const callouts = [...doc.querySelectorAll('[data-wsmd-callout]')].reverse();
   for (const el of callouts) {
     if (el.tagName === 'BLOCKQUOTE') continue;
     const quote = doc.createElement('blockquote');
-    for (const attr of ['data-kbc-callout', 'data-kbc-callout-title', 'data-kbc-callout-fold']) {
+    for (const attr of ['data-wsmd-callout', 'data-wsmd-callout-title', 'data-wsmd-callout-fold']) {
       if (el.hasAttribute(attr)) quote.setAttribute(attr, el.getAttribute(attr));
     }
     while (el.firstChild) quote.appendChild(el.firstChild);
@@ -486,8 +486,8 @@ function calloutsToBlockquotes(doc) {
 function tagMath(doc) {
   const makePlaceholder = (tex, display) => {
     const span = doc.createElement('span');
-    span.setAttribute('data-kbc-math', tex);
-    if (display) span.setAttribute('data-kbc-math-display', 'true');
+    span.setAttribute('data-wsmd-math', tex);
+    if (display) span.setAttribute('data-wsmd-math-display', 'true');
     return span;
   };
 
@@ -543,7 +543,7 @@ function tagFigures(doc) {
     const img = figure.querySelector('img');
     const text = caption.textContent.trim();
     if (img && text && !img.getAttribute('alt')) img.setAttribute('alt', text);
-    figure.setAttribute('data-kbc-figure', text);
+    figure.setAttribute('data-wsmd-figure', text);
   }
 }
 

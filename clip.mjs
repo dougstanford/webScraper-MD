@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * kb-clip — clip a page or a whole knowledge base into Obsidian-optimized
+ * webScraperMD — clip a page or a whole knowledge base into Obsidian-optimized
  * Markdown, matching the output of the Obsidian Web Clipper browser extension.
  *
  *   node clip.mjs <url> [options]
@@ -21,7 +21,7 @@ import {
 } from './src/crawl.mjs';
 
 const HELP = `
-kb-clip — web pages and knowledge bases as Obsidian-optimized Markdown
+webScraperMD — web pages and knowledge bases as Obsidian-optimized Markdown
 
 USAGE
   node clip.mjs <url> [options]
@@ -61,11 +61,11 @@ FETCHING
 
 EXAMPLES
   # one page
-  node clip.mjs https://developer.affinity.co/pages/external-api-v2/introduction
+  node clip.mjs https://example.com/docs/api/introduction
 
-  # the whole Affinity v2 API knowledge base, into a vault folder, with an index
-  node clip.mjs https://developer.affinity.co/pages/external-api-v2/introduction \\
-    --crawl --out "~/Obsidian/Web Clippings/Affinity API" --index --wikilinks
+  # the whole v2 API knowledge base, into a vault folder, with an index
+  node clip.mjs https://example.com/docs/api/introduction \\
+    --crawl --out "~/Obsidian/Web Clippings/Example API" --index --wikilinks
 
   # a JavaScript-rendered site, seeded from its sitemap
   node clip.mjs https://example.com/docs/ --crawl --render --sitemap --limit 50
@@ -153,7 +153,7 @@ function parseArgs(argv) {
 }
 
 function fail(message) {
-  console.error(`kb-clip: ${message}`);
+  console.error(`webScraperMD: ${message}`);
   process.exit(1);
 }
 
@@ -421,7 +421,21 @@ async function main() {
       process.stderr.write(`  ${failure.url} — ${failure.error}\n`);
     }
   }
-  if (!clipped.length) process.exit(1);
+
+  // Playwright can leave handles behind after a long run, which keeps Node
+  // alive long after the clip is written. Everything is on disk by now, so
+  // flush the output and exit rather than waiting on the event loop.
+  await flushOutput();
+  process.exit(clipped.length ? 0 : 1);
+}
+
+/** Wait for stderr/stdout to drain so nothing is lost to process.exit(). */
+function flushOutput() {
+  const drain = (stream) => new Promise((resolve) => {
+    if (stream.writableLength === 0) resolve();
+    else stream.write('', resolve);
+  });
+  return Promise.all([drain(process.stderr), drain(process.stdout)]);
 }
 
 async function exists(file) {
@@ -434,6 +448,6 @@ async function exists(file) {
 }
 
 main().catch((error) => {
-  console.error(`kb-clip: ${error.stack || error.message}`);
+  console.error(`webScraperMD: ${error.stack || error.message}`);
   process.exit(1);
 });

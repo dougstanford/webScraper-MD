@@ -1,10 +1,10 @@
 {
-  "name": "kb-clipper",
+  "name": "webScraperMD",
   "version": "1.0.0",
   "description": "Clip web pages and whole knowledge bases into Obsidian-optimized Markdown, matching the Obsidian Web Clipper's output.",
   "type": "module",
   "bin": {
-    "kb-clip": "./clip.mjs"
+    "webScraperMD": "./clip.mjs"
   },
   "scripts": {
     "clip": "node clip.mjs"
