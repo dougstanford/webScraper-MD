@@ -90,11 +90,13 @@ function readJsonLd(doc) {
 /** ISO timestamps become plain dates; anything unparseable is passed through. */
 function toDate(value) {
   if (!value) return '';
-  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  // Collapse first: a newline in a <meta> value must never reach the YAML.
+  const clean = collapse(String(value));
+  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(clean);
   if (iso) return iso[1];
-  const parsed = new Date(value);
+  const parsed = new Date(clean);
   if (!Number.isNaN(parsed.getTime())) return formatDate(parsed);
-  return value.trim();
+  return clean;
 }
 
 export function formatDate(date = new Date()) {
@@ -145,16 +147,21 @@ function collapse(value) {
 }
 
 /** Quote a scalar the way the clipper does: always double-quoted, escaped. */
-function yamlString(value) {
+export function yamlString(value) {
   return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
+
+const PLAIN_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function buildFrontmatter(meta, tags = ['clippings'], extra = {}) {
   const lines = ['---'];
   lines.push(`title: ${meta.title ? yamlString(meta.title) : ''}`.trimEnd());
   lines.push(`source: ${meta.source ? yamlString(meta.source) : ''}`.trimEnd());
   lines.push(`author: ${meta.author ? yamlString(meta.author) : ''}`.trimEnd());
-  lines.push(`published: ${meta.published || ''}`.trimEnd());
+  // A plain date stays bare so Obsidian reads it as a date property; anything
+  // else is quoted so page metadata can never add keys to the frontmatter.
+  const published = meta.published || '';
+  lines.push(`published: ${PLAIN_DATE.test(published) ? published : (published ? yamlString(published) : '')}`.trimEnd());
   lines.push(`created: ${meta.created}`);
   lines.push(`description: ${meta.description ? yamlString(meta.description) : ''}`.trimEnd());
   lines.push('tags:');

@@ -136,7 +136,7 @@ function textLength(text) {
  * @param {string} html      raw HTML
  * @param {string} url       the URL it came from (used as base and as `source`)
  * @param {object} options   { tags, now, stripTitleSuffix, readability, wikilinkEmbeds }
- * @returns {{markdown: string, body: string, meta: object, links: string[], images: string[]}}
+ * @returns {{markdown: string, body: string, meta: object, links: string[], images: string[], allLinks: string[]}}
  */
 export function clipPage(html, url, options = {}) {
   const {
@@ -153,6 +153,10 @@ export function clipPage(html, url, options = {}) {
 
   // Metadata comes off the untouched document; preprocessing removes <meta>.
   const preMeta = { doc: doc.cloneNode(true) };
+
+  // Every link on the untouched page, for the crawler: a docs site keeps its
+  // index in the sidebar, which preprocessing and Readability both remove.
+  const allLinks = collectLinks(doc, url);
 
   preprocess(doc, url);
 
@@ -177,7 +181,7 @@ export function clipPage(html, url, options = {}) {
   dom.window.close();
   fragment.window.close();
 
-  return { markdown, body, meta, links, images };
+  return { markdown, body, meta, links, images, allLinks };
 }
 
 /**

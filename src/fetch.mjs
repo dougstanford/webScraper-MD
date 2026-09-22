@@ -6,8 +6,20 @@
  * `--render` switches to Playwright for the ones that do not.
  */
 
-const DEFAULT_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+export const TOOL_NAME = 'webscraper-md';
+
+/** Honest by default: sites can identify, rate-limit, or robots-block us by name. */
+const DEFAULT_UA = `${TOOL_NAME}/1.0 (+https://github.com/dougstanford/webScraper-MD)`;
+
+/** Opt-in browser impersonation for sites that serve bots a stub page. */
+export const CHROME_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
   + '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+
+/** Largest response body we will read into memory. */
+const MAX_BODY_BYTES = 20 * 1024 * 1024;
+
+/** Longest we will honour a Retry-After header before giving up on the wait. */
+const MAX_RETRY_AFTER_MS = 30000;
 
 export class Fetcher {
   constructor({
@@ -22,46 +34,52 @@ export class Fetcher {
     this.render = render;
     this.respectRobots = respectRobots;
     this.retries = retries;
-    this.robotsCache = new Map();
+    this.robotsCache = new Map(); // origin -> Promise<rules[]>
     this.browser = null;
     this.context = null;
   }
 
   async getHtml(url) {
-    if (this.respectRobots) {
-      const allowed = await this.isAllowed(url);
-      if (!allowed) {
-        const err = new Error('Disallowed by robots.txt');
-        err.code = 'ROBOTS';
-        throw err;
-      }
+    if (this.respectRobots) await this.assertAllowed(url);
+    const result = this.render ? await this.renderHtml(url) : await this.fetchHtml(url);
+    // A redirect may have crossed to another origin with its own robots.txt.
+    if (this.respectRobots && result.finalUrl && sameOrigin(result.finalUrl, url) === false) {
+      await this.assertAllowed(result.finalUrl);
     }
-    return this.render ? this.renderHtml(url) : this.fetchHtml(url);
+    return result;
+  }
+
+  async assertAllowed(url) {
+    if (await this.isAllowed(url)) return;
+    const err = new Error('Disallowed by robots.txt');
+    err.code = 'ROBOTS';
+    err.fatal = true;
+    throw err;
   }
 
   async fetchHtml(url, { acceptAnyType = false } = {}) {
     let lastError;
     for (let attempt = 0; attempt <= this.retries; attempt += 1) {
+      const controller = new AbortController();
+      // One timer covers headers *and* body: a server that trickles the body
+      // forever must not pin a worker.
+      const timer = setTimeout(() => controller.abort(), this.timeout);
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), this.timeout);
-        let response;
-        try {
-          response = await fetch(url, {
-            redirect: 'follow',
-            signal: controller.signal,
-            headers: {
-              'User-Agent': this.userAgent,
-              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9',
-            },
-          });
-        } finally {
-          clearTimeout(timer);
-        }
+        const response = await fetch(url, {
+          redirect: 'follow',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': this.userAgent,
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        });
 
         if (response.status === 429 || response.status >= 500) {
-          throw new Error(`HTTP ${response.status}`);
+          const err = new Error(`HTTP ${response.status}`);
+          err.status = response.status;
+          err.retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
+          throw err;
         }
         if (!response.ok) {
           const err = new Error(`HTTP ${response.status}`);
@@ -78,11 +96,31 @@ export class Fetcher {
           throw err;
         }
 
-        return { html: await response.text(), finalUrl: response.url || url, contentType };
+        const declared = Number(response.headers.get('content-length'));
+        if (declared > MAX_BODY_BYTES) {
+          const err = new Error(`Response too large: ${declared} bytes`);
+          err.fatal = true;
+          throw err;
+        }
+
+        const html = await response.text();
+        if (html.length > MAX_BODY_BYTES) {
+          const err = new Error(`Response too large: ${html.length} bytes`);
+          err.fatal = true;
+          throw err;
+        }
+
+        return { html, finalUrl: response.url || url, contentType };
       } catch (error) {
-        lastError = error;
-        if (error.fatal) break;
-        if (attempt < this.retries) await sleep(600 * (attempt + 1));
+        lastError = error.name === 'AbortError'
+          ? Object.assign(new Error(`Timed out after ${this.timeout}ms`), { code: 'TIMEOUT' })
+          : error;
+        if (lastError.fatal) break;
+        if (attempt < this.retries) {
+          await sleep(lastError.retryAfterMs ?? 600 * (attempt + 1));
+        }
+      } finally {
+        clearTimeout(timer);
       }
     }
     throw lastError;
@@ -133,10 +171,12 @@ export class Fetcher {
 
   async isAllowed(url) {
     const { origin, pathname, search } = new URL(url);
+    // Cache the promise, not the result, so concurrent workers hitting a new
+    // origin share one robots.txt request instead of racing N of them.
     if (!this.robotsCache.has(origin)) {
-      this.robotsCache.set(origin, await this.loadRobots(origin));
+      this.robotsCache.set(origin, this.loadRobots(origin));
     }
-    const rules = this.robotsCache.get(origin);
+    const rules = await this.robotsCache.get(origin);
     if (!rules || !rules.length) return true;
 
     const target = pathname + search;
@@ -154,18 +194,19 @@ export class Fetcher {
   }
 
   async loadRobots(origin) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
       const response = await fetch(`${origin}/robots.txt`, {
         signal: controller.signal,
         headers: { 'User-Agent': this.userAgent },
       });
-      clearTimeout(timer);
       if (!response.ok) return [];
       return parseRobots(await response.text());
     } catch {
       return [];
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -181,14 +222,33 @@ export class Fetcher {
   }
 }
 
+function sameOrigin(a, b) {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Retry-After as milliseconds, capped; null when absent or unparseable. */
+export function parseRetryAfter(header) {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, MAX_RETRY_AFTER_MS);
+  const date = Date.parse(header);
+  if (Number.isNaN(date)) return null;
+  return Math.min(Math.max(date - Date.now(), 0), MAX_RETRY_AFTER_MS);
+}
+
 /**
- * Minimal robots.txt parser: collects the rules of the `User-agent: *` group.
- * Consecutive User-agent lines form one group, so a `*` anywhere among them
- * means the group's rules apply to us.
+ * Minimal robots.txt parser: collects the rules of the most specific group
+ * that applies to us. A group naming this tool wins over the `*` group, as
+ * the spec requires; only one group's rules are used.
+ * Consecutive User-agent lines form one group.
  */
 export function parseRobots(text) {
-  const rules = [];
-  let agents = [];
+  const groups = []; // { agents: string[], rules: [] }
+  let current = null;
   let collectingAgents = false;
 
   for (const rawLine of text.split(/\r?\n/)) {
@@ -200,18 +260,25 @@ export function parseRobots(text) {
     const value = line.slice(separator + 1).trim();
 
     if (field === 'user-agent') {
-      if (!collectingAgents) agents = [];   // a new group starts
-      agents.push(value.toLowerCase());
+      if (!collectingAgents) {
+        current = { agents: [], rules: [] };
+        groups.push(current);
+      }
+      current.agents.push(value.toLowerCase());
       collectingAgents = true;
       continue;
     }
 
     collectingAgents = false;
-    if (!agents.includes('*')) continue;
-    if (field === 'disallow') rules.push(value ? { allow: false, path: value } : { allow: true, path: '/' });
-    if (field === 'allow' && value) rules.push({ allow: true, path: value });
+    if (!current) continue;
+    if (field === 'disallow') current.rules.push(value ? { allow: false, path: value } : { allow: true, path: '/' });
+    if (field === 'allow' && value) current.rules.push({ allow: true, path: value });
   }
-  return rules;
+
+  const named = groups.filter((g) => g.agents.some((a) => a === TOOL_NAME || TOOL_NAME.startsWith(a) && a.length > 2));
+  const wildcard = groups.filter((g) => g.agents.includes('*'));
+  const chosen = named.length ? named : wildcard;
+  return chosen.flatMap((g) => g.rules);
 }
 
 /** robots.txt path matching, including `*` wildcards and a trailing `$`. */

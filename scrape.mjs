@@ -9,13 +9,15 @@
  */
 
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-import { Fetcher } from './src/fetch.mjs';
+import { Fetcher, CHROME_UA } from './src/fetch.mjs';
 import { clipPage, collectAllLinks } from './src/extract.mjs';
-import { sanitiseFilename, pathFromUrl, uniqueName } from './src/filename.mjs';
-import { formatDate } from './src/frontmatter.mjs';
+import { sanitiseFilename, pathFromUrl, uniqueName, safeDecode } from './src/filename.mjs';
+import { formatDate, yamlString } from './src/frontmatter.mjs';
+import { downloadAsset } from './src/assets.mjs';
 import {
   crawl, defaultScope, makeFilter, normaliseUrl, fetchSitemapUrls,
 } from './src/crawl.mjs';
@@ -36,7 +38,7 @@ OUTPUT
       --tags <a,b,c>       Frontmatter tags (default: clippings)
       --filename <mode>    Note name from: title | h1 | slug  (default: title)
       --strip-site-suffix  Trim " - Site Name" / " | Site Name" from titles
-      --overwrite          Rewrite notes that already exist (default: skip)
+      --overwrite          Rewrite notes and attachments that already exist (default: skip)
       --dry-run            Report what would be written, write nothing
 
 CRAWLING
@@ -57,7 +59,10 @@ FETCHING
       --timeout <ms>       Per-request timeout (default: 30000)
       --ignore-robots      Do not consult robots.txt
       --no-readability     Skip Readability; convert the main content element
-      --user-agent <ua>    Override the User-Agent header
+      --user-agent <ua>    Override the User-Agent header ("chrome" for a browser string)
+
+EXIT CODES
+  0  every page clipped      1  nothing clipped      2  some pages failed
 
 EXAMPLES
   # one page
@@ -109,6 +114,15 @@ function parseArgs(argv) {
       if (value === undefined) fail(`Missing value for ${arg}`);
       return value;
     };
+    /** A numeric flag value, or a clear failure. Never NaN. */
+    const num = ({ min = 0, integer = true } = {}) => {
+      const raw = next();
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < min || (integer && !Number.isInteger(n))) {
+        fail(`${arg} needs ${integer ? 'a whole number' : 'a number'}${min > 0 ? ` of at least ${min}` : ''}, got "${raw}"`);
+      }
+      return n;
+    };
 
     switch (arg) {
       case '-h': case '--help': console.log(HELP.trim()); process.exit(0); break;
@@ -126,19 +140,23 @@ function parseArgs(argv) {
       case '--dry-run': opts.dryRun = true; break;
       case '--crawl': opts.crawl = true; break;
       case '--scope': opts.scope = next(); break;
-      case '--depth': opts.depth = Number(next()); break;
-      case '--limit': opts.limit = Number(next()); break;
+      case '--depth': opts.depth = num(); break;
+      case '--limit': opts.limit = num({ min: 1 }); break;
       case '--include': opts.include.push(next()); break;
       case '--exclude': opts.exclude.push(next()); break;
       case '--sitemap': opts.sitemap = true; break;
       case '--allow-offsite': case '--same-origin=false': opts.sameOrigin = false; break;
       case '--render': opts.render = true; break;
-      case '--concurrency': opts.concurrency = Number(next()); break;
-      case '--delay': opts.delay = Number(next()); break;
-      case '--timeout': opts.timeout = Number(next()); break;
+      case '--concurrency': opts.concurrency = num({ min: 1 }); break;
+      case '--delay': opts.delay = num({ integer: false }); break;
+      case '--timeout': opts.timeout = num({ min: 1 }); break;
       case '--ignore-robots': opts.respectRobots = false; break;
       case '--no-readability': opts.readability = false; break;
-      case '--user-agent': opts.userAgent = next(); break;
+      case '--user-agent': {
+        const ua = next();
+        opts.userAgent = ua.toLowerCase() === 'chrome' ? CHROME_UA : ua;
+        break;
+      }
       default:
         if (arg.startsWith('-')) fail(`Unknown option: ${arg}`);
         else if (!opts.url) opts.url = arg;
@@ -148,7 +166,11 @@ function parseArgs(argv) {
 
   if (!opts.url) fail('A start URL is required.\n\n' + HELP.trim());
   if (!/^https?:\/\//i.test(opts.url)) opts.url = `https://${opts.url}`;
+  try { new URL(opts.url); } catch { fail(`Not a valid URL: ${opts.url}`); }
   if (!['title', 'h1', 'slug'].includes(opts.filename)) fail(`--filename must be title, h1, or slug`);
+  for (const pattern of [...opts.include, ...opts.exclude]) {
+    try { new RegExp(pattern, 'i'); } catch (error) { fail(`Bad pattern "${pattern}": ${error.message}`); }
+  }
   return opts;
 }
 
@@ -158,7 +180,7 @@ function fail(message) {
 }
 
 function expandHome(p) {
-  return p.startsWith('~') ? path.join(process.env.HOME || '', p.slice(1)) : p;
+  return p === '~' || p.startsWith('~/') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
 /** Note name for a page, per --filename mode. */
@@ -167,27 +189,9 @@ function noteNameFor(meta, url, mode) {
   if (mode === 'slug') {
     const segments = new URL(url).pathname.split('/').filter(Boolean);
     const slug = segments.pop() || new URL(url).hostname;
-    return sanitiseFilename(decodeURIComponent(slug.replace(/\.(html?|php|aspx?)$/i, '')));
+    return sanitiseFilename(safeDecode(slug.replace(/\.(html?|php|aspx?)$/i, '')));
   }
   return sanitiseFilename(meta.title || meta.h1 || url);
-}
-
-/** Download an image into <out>/attachments, returning its local filename. */
-async function downloadAsset(fetcher, src, attachmentsDir, taken, dryRun) {
-  const url = new URL(src);
-  const base = decodeURIComponent(path.basename(url.pathname)) || 'image';
-  const ext = path.extname(base) || '.png';
-  const stem = sanitiseFilename(path.basename(base, path.extname(base)) || 'image', { maxLength: 96 });
-  const name = uniqueName(`${stem}${ext}`, taken);
-
-  if (dryRun) return name;
-
-  const response = await fetch(src, { headers: { 'User-Agent': fetcher.userAgent } });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.mkdir(attachmentsDir, { recursive: true });
-  await fs.writeFile(path.join(attachmentsDir, name), buffer);
-  return name;
 }
 
 /**
@@ -204,7 +208,7 @@ function applyWikilinks(markdown, urlToNote, selfUrl) {
     const note = urlToNote.get(key);
     if (!note) return match;
     if (key === normaliseUrl(selfUrl) && fragment) return `[${text}](#${fragment})`;
-    const heading = fragment ? `#${decodeURIComponent(fragment).replace(/[|#^[\]]/g, ' ')}` : '';
+    const heading = fragment ? `#${safeDecode(fragment).replace(/[|#^[\]]/g, ' ')}` : '';
     const label = text.trim();
     if (!label || label === note) return `[[${note}${heading}]]`;
     return `[[${note}${heading}|${label}]]`;
@@ -213,21 +217,22 @@ function applyWikilinks(markdown, urlToNote, selfUrl) {
 
 function buildIndexNote({ name, startUrl, pages, tags, site }) {
   const created = formatDate();
+  const siteName = site || new URL(startUrl).hostname;
   const lines = [
     '---',
-    `title: "${name}"`,
-    `source: "${startUrl}"`,
+    `title: ${yamlString(name)}`,
+    `source: ${yamlString(startUrl)}`,
     'author:',
     'published:',
     `created: ${created}`,
-    `description: "Index of ${pages.length} page${pages.length === 1 ? '' : 's'} clipped from ${site || new URL(startUrl).hostname}"`,
+    `description: ${yamlString(`Index of ${pages.length} page${pages.length === 1 ? '' : 's'} clipped from ${siteName}`)}`,
     'tags:',
-    ...tags.map((tag) => `  - "${tag}"`),
+    ...tags.map((tag) => `  - ${yamlString(tag)}`),
     '  - "index"',
     '---',
     `# ${name}`,
     '',
-    `Clipped from [${site || new URL(startUrl).hostname}](${startUrl}) on ${created}.`,
+    `Clipped from [${siteName}](${startUrl}) on ${created}.`,
     '',
   ];
 
@@ -273,11 +278,23 @@ async function main() {
     startUrl: opts.url,
   });
 
+  const takenNotes = new Set();
+  const takenAssets = new Set();
+  const clipped = [];   // { url, key, note, folder, file, markdown, description, site }
+  const failures = [];  // { url, error }
+  const now = new Date();
+  let assetsSkipped = 0;
+
+  const onError = (url, error) => {
+    failures.push({ url, error: error.message });
+    process.stderr.write(`  ! ${url} — ${error.message}\n`);
+  };
+
   const startUrls = [opts.url];
   if (opts.crawl && opts.sitemap) {
     const origin = new URL(opts.url).origin;
     process.stderr.write('Reading sitemap...\n');
-    const sitemapUrls = await fetchSitemapUrls(fetcher, origin);
+    const sitemapUrls = await fetchSitemapUrls(fetcher, origin, { onError });
     const seeded = sitemapUrls.map((u) => normaliseUrl(u)).filter((u) => u && accepts(u));
     process.stderr.write(`  ${seeded.length} in-scope URL${seeded.length === 1 ? '' : 's'} from sitemap\n`);
     startUrls.push(...seeded);
@@ -285,13 +302,50 @@ async function main() {
 
   if (!opts.dryRun) await fs.mkdir(outDir, { recursive: true });
 
-  const takenNotes = new Set();
-  const takenAssets = new Set();
-  const clipped = [];   // { url, note, folder, file, markdown, description }
-  const failures = [];
-  const now = new Date();
+  // --- Writing -------------------------------------------------------------
+  // Notes are held until the crawl ends so --wikilinks can see every page. To
+  // make that safe, the same writer runs on Ctrl-C and on a crash, so a long
+  // crawl never ends with nothing on disk.
+  const writeNotes = async (pages, { wikilinks }) => {
+    if (wikilinks) {
+      const urlToNote = new Map(pages.map((page) => [page.key, page.note]));
+      for (const page of pages) page.markdown = applyWikilinks(page.markdown, urlToNote, page.url);
+    }
+    let written = 0;
+    let skipped = 0;
+    for (const page of pages) {
+      if (page.written !== undefined) { if (page.written) written += 1; else skipped += 1; continue; }
+      if (opts.dryRun) continue;
+      try {
+        await fs.mkdir(path.dirname(page.file), { recursive: true });
+        if (!opts.overwrite && await exists(page.file)) {
+          page.written = false;
+          skipped += 1;
+          continue;
+        }
+        await fs.writeFile(page.file, page.markdown, 'utf8');
+        page.written = true;
+        written += 1;
+      } catch (error) {
+        onError(page.url, Object.assign(error, { message: `write: ${error.message}` }));
+      }
+    }
+    return { written, skipped };
+  };
+
+  let interrupted = false;
+  process.once('SIGINT', async () => {
+    interrupted = true;
+    process.stderr.write(`\nInterrupted. Writing the ${clipped.length} page(s) clipped so far...\n`);
+    await fetcher.close().catch(() => {});
+    const { written } = await writeNotes([...clipped], { wikilinks: false });
+    process.stderr.write(`Wrote ${written} note(s) to ${outDir}\n`);
+    await flushOutput();
+    process.exit(130);
+  });
 
   const handlePage = async (url, html) => {
+    if (interrupted) return { links: [] };
     const result = clipPage(html, url, {
       tags: opts.tags,
       now,
@@ -307,9 +361,21 @@ async function main() {
       const map = new Map();
       for (const src of images) {
         try {
-          map.set(src, await downloadAsset(fetcher, src, attachmentsDir, takenAssets, opts.dryRun));
+          const { name } = await downloadAsset(src, {
+            dir: attachmentsDir,
+            taken: takenAssets,
+            userAgent: fetcher.userAgent,
+            timeout: opts.timeout,
+            dryRun: opts.dryRun,
+            overwrite: opts.overwrite,
+          });
+          map.set(src, name);
         } catch (error) {
-          failures.push({ url: src, error: `asset: ${error.message}` });
+          if (error.skip) {
+            assetsSkipped += 1; // left as a remote link; not a failure
+          } else {
+            failures.push({ url: src, error: `asset: ${error.message}` });
+          }
         }
       }
       markdown = markdown.replace(/!\[([^\]]*)\]\((<[^>]+>|[^()\s]+)(?:\s+"[^"]*")?\)/g, (match, alt, rawSrc) => {
@@ -336,12 +402,7 @@ async function main() {
 
     process.stderr.write(`  + ${note}\n`);
     // The crawler wants every link on the page, not just the article's.
-    return { links: collectAllLinks(html, url) };
-  };
-
-  const onError = (url, error) => {
-    failures.push({ url, error: error.message });
-    process.stderr.write(`  ! ${url} — ${error.message}\n`);
+    return { links: result.allLinks ?? collectAllLinks(html, url) };
   };
 
   process.stderr.write(`${opts.crawl ? 'Crawling' : 'Clipping'} ${opts.url}\n`);
@@ -368,30 +429,20 @@ async function main() {
         onError(opts.url, error);
       }
     }
+  } catch (error) {
+    // The crawler itself failed. Save what we have before reporting.
+    process.stderr.write(`\nCrawl aborted: ${error.message}\n`);
+    await fetcher.close().catch(() => {});
+    const { written } = await writeNotes([...clipped], { wikilinks: false });
+    process.stderr.write(`Wrote ${written} note(s) to ${outDir} before the failure\n`);
+    throw error;
   } finally {
     await fetcher.close();
   }
+  if (interrupted) return;
 
-  // --- Cross-linking and writing -------------------------------------------
-  if (opts.wikilinks) {
-    const urlToNote = new Map(clipped.map((page) => [page.key, page.note]));
-    for (const page of clipped) {
-      page.markdown = applyWikilinks(page.markdown, urlToNote, page.url);
-    }
-  }
-
-  let written = 0;
-  let skipped = 0;
-  for (const page of clipped) {
-    if (opts.dryRun) continue;
-    await fs.mkdir(path.dirname(page.file), { recursive: true });
-    if (!opts.overwrite && await exists(page.file)) {
-      skipped += 1;
-      continue;
-    }
-    await fs.writeFile(page.file, page.markdown, 'utf8');
-    written += 1;
-  }
+  const { written: notesWritten, skipped } = await writeNotes(clipped, { wikilinks: opts.wikilinks });
+  let written = notesWritten;
 
   if (opts.index && clipped.length) {
     const site = clipped[0].site;
@@ -402,11 +453,15 @@ async function main() {
     const contents = buildIndexNote({
       name, startUrl: opts.url, pages: clipped, tags: opts.tags, site,
     });
-    if (!opts.dryRun) {
+    if (opts.dryRun) {
+      process.stderr.write(`  = index: ${name}.md\n`);
+    } else if (!opts.overwrite && await exists(indexPath)) {
+      process.stderr.write(`  = index: ${name}.md already exists; --overwrite to replace\n`);
+    } else {
       await fs.writeFile(indexPath, contents, 'utf8');
       written += 1;
+      process.stderr.write(`  = index: ${name}.md\n`);
     }
-    process.stderr.write(`  = index: ${name}.md\n`);
   }
 
   process.stderr.write('\n');
@@ -415,18 +470,20 @@ async function main() {
       ? `Dry run: ${clipped.length} page(s) would be written to ${outDir}\n`
       : `Wrote ${written} note(s) to ${outDir}${skipped ? ` (${skipped} already existed; --overwrite to replace)` : ''}\n`,
   );
+  if (assetsSkipped) process.stderr.write(`${assetsSkipped} image link(s) left remote (not an image, or a private host)\n`);
   if (failures.length) {
     process.stderr.write(`${failures.length} failure(s):\n`);
-    for (const failure of failures.slice(0, 20)) {
-      process.stderr.write(`  ${failure.url} — ${failure.error}\n`);
-    }
+    const shown = failures.slice(0, 20);
+    for (const failure of shown) process.stderr.write(`  ${failure.url} — ${failure.error}\n`);
+    if (failures.length > shown.length) process.stderr.write(`  ...and ${failures.length - shown.length} more\n`);
   }
 
   // Playwright can leave handles behind after a long run, which keeps Node
   // alive long after the clip is written. Everything is on disk by now, so
   // flush the output and exit rather than waiting on the event loop.
   await flushOutput();
-  process.exit(clipped.length ? 0 : 1);
+  if (!clipped.length) process.exit(1);
+  process.exit(failures.length ? 2 : 0);
 }
 
 /** Wait for stderr/stdout to drain so nothing is lost to process.exit(). */
@@ -447,7 +504,8 @@ async function exists(file) {
   }
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(`webScraper-MD: ${error.stack || error.message}`);
+  await flushOutput();
   process.exit(1);
 });

@@ -22,6 +22,15 @@ export function sanitiseFilename(name, { maxLength = 184 } = {}) {
   return out;
 }
 
+/** decodeURIComponent that returns its input on a malformed sequence instead of throwing. */
+export function safeDecode(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
 /** Turn a URL path into a nested output directory, for --tree layout. */
 export function pathFromUrl(url, scopePrefix) {
   const u = new URL(url);
@@ -34,7 +43,7 @@ export function pathFromUrl(url, scopePrefix) {
   }
   const segments = pathname.split('/').filter(Boolean);
   segments.pop(); // the leaf becomes the note itself
-  return segments.map((segment) => sanitiseFilename(decodeURIComponent(segment)));
+  return segments.map((segment) => sanitiseFilename(safeDecode(segment)));
 }
 
 /** Ensure uniqueness within a run: "Name", "Name 2", "Name 3", ... */

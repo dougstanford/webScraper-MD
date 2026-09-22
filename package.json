@@ -1,13 +1,22 @@
 {
-  "name": "webScraper-MD",
-  "version": "1.0.0",
+  "name": "webscraper-md",
+  "version": "1.0.1",
   "description": "Clip web pages and whole knowledge bases into Obsidian-optimized Markdown, matching the Obsidian Web Clipper's output.",
   "type": "module",
   "bin": {
-    "webScraper-MD": "./scrape.mjs"
+    "webscraper-md": "./scrape.mjs"
+  },
+  "files": [
+    "scrape.mjs",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
-    "scrape": "node scrape.mjs"
+    "scrape": "node scrape.mjs",
+    "test": "node test/smoke.mjs"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
@@ -15,8 +24,8 @@
     "turndown": "^7.2.1",
     "turndown-plugin-gfm": "^1.0.2"
   },
-  "license": "MIT",
   "optionalDependencies": {
     "playwright": "^1.63.0"
-  }
+  },
+  "license": "MIT"
 }

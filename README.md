@@ -33,8 +33,8 @@ interface for building internal apps, automated workflows, ...
 npm install
 ```
 
-Node 18+ (tested on 26). Playwright and Chromium are installed, so `--render`
-works out of the box. On a fresh clone:
+Node 18+ (tested on 26). `--render` needs Playwright and a Chromium build:
+
 
 ```bash
 npm install playwright && npx playwright install chromium
@@ -99,11 +99,11 @@ node scrape.mjs https://example.com/docs/start --crawl --dry-run
 | `--tree` | Mirror the site's URL path as subfolders instead of a flat folder. |
 | `--index [name]` | Write an index note linking every clipped page. Defaults to the site name. |
 | `--wikilinks` | Rewrite links between clipped pages as `[[Note]]` / `[[Note\|text]]`. |
-| `--assets` | Download images into `<out>/attachments` and embed them as `![[file.png]]`. |
+| `--assets` | Download images into `<out>/attachments` and embed them as `![[file.png]]`. Only responses that are images are stored, up to 15 MB each; private and loopback hosts are refused. |
 | `--tags <a,b,c>` | Frontmatter tags (default `clippings`). |
 | `--filename <mode>` | Note name from `title` (default), `h1`, or `slug`. |
 | `--strip-site-suffix` | Trim `" - Site Name"` / `" \| Site Name"` from titles. |
-| `--overwrite` | Replace notes that already exist (default: skip them). |
+| `--overwrite` | Replace notes, attachments, and the index note that already exist (default: skip them). |
 | `--dry-run` | Report what would be written; write nothing. |
 
 ### Crawling
@@ -116,7 +116,7 @@ node scrape.mjs https://example.com/docs/start --crawl --dry-run
 | `--limit <n>` | Maximum pages (default 200). |
 | `--include <regex>` | Only crawl URLs matching this pattern. Repeatable. |
 | `--exclude <regex>` | Never crawl URLs matching this pattern. Repeatable. |
-| `--sitemap` | Also seed from the site's `sitemap.xml`. |
+| `--sitemap` | Also seed from the site's `sitemap.xml` (and one level of sitemap index). Gzipped sitemaps are not read. |
 | `--allow-offsite` | Allow crawling off the start host. |
 
 ### Fetching
@@ -129,7 +129,7 @@ node scrape.mjs https://example.com/docs/start --crawl --dry-run
 | `--timeout <ms>` | Per-request timeout (default 30000). |
 | `--ignore-robots` | Skip the robots.txt check (on by default). |
 | `--no-readability` | Convert the main content element directly, skipping Readability. |
-| `--user-agent <ua>` | Override the User-Agent header. |
+| `--user-agent <ua>` | Override the User-Agent header. `chrome` is shorthand for a desktop Chrome string, for sites that serve bots a stub page. |
 
 ## What the conversion produces
 
@@ -192,6 +192,21 @@ in Obsidian:
 a 400ms pause, and `--limit` caps the run. Raise `--delay` and lower
 `--concurrency` on small sites. `--ignore-robots` exists but is yours to justify.
 
+The default User-Agent identifies the tool as `webscraper-md`, so a site can
+rate-limit it or address it in `robots.txt` by name; a `User-agent: webscraper-md`
+group takes precedence over `*`. `Retry-After` on 429 and 503 responses is
+honoured, up to 30 seconds.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Every page was clipped. |
+| 1 | Nothing was clipped, or the arguments were invalid. |
+| 2 | Some pages were clipped and some failed; the failures are listed on stderr. |
+
+Ctrl-C during a crawl writes the pages clipped so far before exiting.
+
 ## Layout
 
 ```
@@ -202,5 +217,7 @@ src/extract.mjs       Readability + Turndown pipeline for one page
 src/markdown.mjs      Turndown configuration and the Obsidian-flavoured rules
 src/frontmatter.mjs   Metadata extraction and YAML frontmatter
 src/filename.mjs      Vault-safe filenames and uniqueness
+src/assets.mjs        Image downloads for --assets, with the guards that make them safe
 src/crawl.mjs         URL scoping, sitemaps, breadth-first queue
+test/smoke.mjs        Local end-to-end check against a throwaway HTTP server (`npm test`)
 ```
