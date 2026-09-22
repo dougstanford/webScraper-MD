@@ -9,7 +9,8 @@
   "files": [
     "scrape.mjs",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18"

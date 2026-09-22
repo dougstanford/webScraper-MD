@@ -221,3 +221,7 @@ src/assets.mjs        Image downloads for --assets, with the guards that make th
 src/crawl.mjs         URL scoping, sitemaps, breadth-first queue
 test/smoke.mjs        Local end-to-end check against a throwaway HTTP server (`npm test`)
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
