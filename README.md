@@ -161,12 +161,11 @@ Matched to the reference clippings, not just to Turndown's defaults:
 
 ## Fidelity check
 
-The output was diffed against pages the extension itself had clipped — the
-Plaid, Bitbucket and Obsidian Help clippings in this vault.
+The output was diffed against pages the extension itself had clipped: a set of
+Bitbucket and Obsidian Help reference clippings.
 
-- `plaid.com/docs/auth/coverage/microdeposit-events/`: identical except the clip
-  date, one paragraph Plaid edited since, and a trailing section the extension's
-  clipping had cut off.
+- `support.atlassian.com` Bitbucket Markdown guide: identical except the clip
+  date and a trailing section the extension's clipping had cut off.
 - `obsidian.md/help/embed-web-pages` (rendered): identical except the trailing
   newline.
 - The other Obsidian Help pages differ mostly in ways where this tool is more
