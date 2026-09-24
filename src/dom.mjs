@@ -312,7 +312,7 @@ function stripHeadingPermalinks(doc) {
 function tagCodeLanguages(doc) {
   const fromClassList = (el) => {
     for (const cls of el.classList || []) {
-      const m = /^(?:language|lang|highlight-source|brush:|syntax)[-:]?([a-z0-9+#.-]+)$/i.exec(cls);
+      const m = /^(?:language|lang|highlight-source|brush:|syntax)[-:]?([a-z0-9][a-z0-9+#.-]*)$/i.exec(cls);
       if (m && m[1] && m[1] !== 'none') return m[1].toLowerCase();
     }
     return null;
